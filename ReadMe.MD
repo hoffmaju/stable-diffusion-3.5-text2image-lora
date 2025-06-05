@@ -137,23 +137,54 @@ accelerate launch train_text_to_image_lora_sd35.py \
   --validation_epochs 5
 ```
 
-### 4. Environment Variables (Optional)
+### 4. Generate Images with Your Trained LoRA
 
-You can customize training with environment variables:
+Once training is complete, generate images with your custom LoRA:
+
+**Easy way (recommended):**
 
 ```bash
-# For basic training
+# Generate images with default settings
+bash scripts/inference.sh
+
+# Customize with environment variables
+PROMPT="a futuristic cityscape at sunset" \
+NUM_IMAGES=8 \
+bash scripts/inference.sh
+```
+
+**Manual way (for full control):**
+
+```bash
+python inference.py \
+  --lora_path "./outputs/sd35-lora-basic" \
+  --prompt "your amazing prompt here" \
+  --num_images 4 \
+  --height 1024 \
+  --width 1024 \
+  --num_inference_steps 28 \
+  --guidance_scale 7.0 \
+  --seed 42
+```
+
+### 5. Environment Variables (Optional)
+
+Customize training and inference with environment variables:
+
+```bash
+# Training customization
 MODEL_NAME="stabilityai/stable-diffusion-3.5-medium" \
 DATASET_DIR="./your_custom_dataset" \
 BATCH_SIZE=4 \
 EPOCHS=20 \
 bash scripts/train_basic.sh
 
-# For advanced training
-MODEL_NAME="stabilityai/stable-diffusion-3.5-medium" \
-VALIDATION_PROMPT="your custom validation prompt" \
-RANK=256 \
-bash scripts/train_advanced.sh
+# Inference customization
+PROMPT="your custom prompt" \
+NUM_IMAGES=8 \
+STEPS=50 \
+RESOLUTION=1024 \
+bash scripts/inference.sh
 ```
 
 ## ⚙️ Configuration Options
@@ -187,6 +218,17 @@ bash scripts/train_advanced.sh
 | `--validation_epochs`      | Epochs between validations    | 50             | Set to 1-5 for frequent validation |
 | `--checkpointing_steps`    | Steps between checkpoints     | 500            | Adjust based on training length    |
 | `--precondition_outputs`   | Enable output preconditioning | 1              | As per SD3 paper                   |
+
+### Inference Parameters
+
+| Parameter               | Description                  | Default  | Notes                       |
+| ----------------------- | ---------------------------- | -------- | --------------------------- |
+| `--lora_path`           | Path to trained LoRA weights | Required | Directory with .safetensors |
+| `--lora_scale`          | LoRA effect strength         | 1.0      | 0.0-2.0 range typical       |
+| `--num_images`          | Number of images to generate | 1        | Batch generation            |
+| `--num_inference_steps` | Denoising steps              | 28       | More steps = better quality |
+| `--guidance_scale`      | Prompt adherence strength    | 7.0      | Higher = more faithful      |
+| `--seed`                | Random seed                  | None     | For reproducible results    |
 
 ## 📊 Monitoring and Logging
 
