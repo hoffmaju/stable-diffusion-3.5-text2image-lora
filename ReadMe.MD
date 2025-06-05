@@ -68,9 +68,29 @@ pip install black flake8 pytest
 
 ## 🚀 Quick Start
 
-### 1. Prepare Your Dataset
+### 1. Environment Setup
 
-Create a directory structure like this:
+```bash
+# Clone the repository
+git clone https://github.com/seochan99/stable-diffusion-3.5-text2image-lora.git
+cd stable-diffusion-3.5-text2image-lora
+
+# Run setup script (installs dependencies and configures accelerate)
+bash scripts/setup.sh
+```
+
+### 2. Prepare Your Dataset
+
+We provide an example dataset structure in `examples/dataset/`. You can:
+
+**Option A: Use the example structure**
+
+```bash
+# Add your images to examples/dataset/images/
+# Update examples/dataset/metadata.jsonl with your captions
+```
+
+**Option B: Create your own dataset**
 
 ```bash
 your_dataset/
@@ -88,54 +108,52 @@ Where `metadata.jsonl` contains:
 {"image": "images/image2.jpg", "caption": "A portrait of a person"}
 ```
 
-### 2. Basic Training Command
+### 3. Start Training
+
+**Easy way (recommended for beginners):**
+
+```bash
+# Basic training with good defaults
+bash scripts/train_basic.sh
+
+# Advanced training with all features
+bash scripts/train_advanced.sh
+```
+
+**Manual way (for customization):**
 
 ```bash
 accelerate launch train_text_to_image_lora_sd35.py \
   --pretrained_model_name_or_path "stabilityai/stable-diffusion-3.5-medium" \
-  --train_data_dir "/path/to/your/dataset" \
+  --train_data_dir "./examples/dataset" \
   --output_dir "./outputs/sd35-lora" \
   --resolution 1024 \
   --train_batch_size 2 \
   --num_train_epochs 10 \
-  --rank 128 \
+  --rank 64 \
   --learning_rate 1e-4 \
   --mixed_precision fp16 \
   --validation_prompt "a beautiful landscape" \
   --validation_epochs 5
 ```
 
-### 3. Advanced Training with All Features
+### 4. Environment Variables (Optional)
+
+You can customize training with environment variables:
 
 ```bash
-accelerate launch train_text_to_image_lora_sd35.py \
-  --pretrained_model_name_or_path "stabilityai/stable-diffusion-3.5-medium" \
-  --train_data_dir "/path/to/your/dataset" \
-  --output_dir "./outputs/sd35-lora-advanced" \
-  --resolution 1024 \
-  --train_batch_size 4 \
-  --gradient_accumulation_steps 2 \
-  --num_train_epochs 20 \
-  --rank 128 \
-  --learning_rate 1e-4 \
-  --text_encoder_lr 5e-5 \
-  --lr_scheduler cosine \
-  --lr_warmup_steps 500 \
-  --max_grad_norm 1.0 \
-  --checkpointing_steps 1000 \
-  --validation_prompt "a cyberpunk cityscape at night" \
-  --validation_epochs 5 \
-  --num_validation_images 4 \
-  --mixed_precision fp16 \
-  --gradient_checkpointing \
-  --dataloader_num_workers 4 \
-  --report_to wandb \
-  --seed 42 \
-  --train_text_encoder \
-  --weighting_scheme logit_normal \
-  --logit_mean 0.0 \
-  --logit_std 1.0 \
-  --precondition_outputs 1
+# For basic training
+MODEL_NAME="stabilityai/stable-diffusion-3.5-medium" \
+DATASET_DIR="./your_custom_dataset" \
+BATCH_SIZE=4 \
+EPOCHS=20 \
+bash scripts/train_basic.sh
+
+# For advanced training
+MODEL_NAME="stabilityai/stable-diffusion-3.5-medium" \
+VALIDATION_PROMPT="your custom validation prompt" \
+RANK=256 \
+bash scripts/train_advanced.sh
 ```
 
 ## ⚙️ Configuration Options

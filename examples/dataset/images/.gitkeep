@@ -1,0 +1,19 @@
+# This file keeps the images directory in git
+# Add your training images here and remove this file
+
+# Expected image files (as referenced in metadata.jsonl):
+# - landscape_001.jpg
+# - portrait_001.jpg
+# - cityscape_001.jpg
+# - nature_001.jpg
+# - abstract_001.jpg
+# - animal_001.jpg
+# - architecture_001.jpg
+# - fantasy_001.jpg
+# - food_001.jpg
+# - space_001.jpg
+# - vintage_001.jpg
+# - underwater_001.jpg
+# - winter_001.jpg
+# - desert_001.jpg
+# - city_night_001.jpg
