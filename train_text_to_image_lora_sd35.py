@@ -537,6 +537,7 @@ def _encode_prompt_with_clip(
     tokenizer,
     prompt_list,
     device,
+    weight_dtype,
     text_input_ids=None,
     num_images_per_prompt=1,
 ):
@@ -560,7 +561,7 @@ def _encode_prompt_with_clip(
     outputs = text_encoder(text_input_ids, output_hidden_states=True)
     pooled = outputs[0]  # Pooled output
     last_hidden = outputs.hidden_states[-2]  # Second-to-last hidden state
-    prompt_embeds = last_hidden.to(dtype=text_encoder.dtype, device=device)
+    prompt_embeds = last_hidden.to(dtype=weight_dtype, device=device)
 
     # Repeat embeddings for multiple images per prompt
     _, seq_len, _ = prompt_embeds.shape
@@ -577,6 +578,7 @@ def _encode_prompt_with_t5(
     max_sequence_length,
     num_images_per_prompt,
     device,
+    weight_dtype,
     text_input_ids=None,
 ):
     """Encode prompts using T5 text encoder."""
@@ -598,7 +600,7 @@ def _encode_prompt_with_t5(
 
     # Forward pass through T5 encoder
     prompt_embeds = text_encoder(text_input_ids)[0]
-    prompt_embeds = prompt_embeds.to(dtype=text_encoder.dtype, device=device)
+    prompt_embeds = prompt_embeds.to(dtype=weight_dtype, device=device)
 
     # Repeat embeddings for multiple images per prompt
     _, seq_len, _ = prompt_embeds.shape
@@ -614,6 +616,7 @@ def encode_prompt(
     prompt_list,
     max_sequence_length,
     device,
+    weight_dtype,
     num_images_per_prompt=1,
     text_input_ids_list=None,
 ):
@@ -664,6 +667,7 @@ def encode_prompt(
             tokenizer=None,  # Already tokenized
             prompt_list=prompt_list,
             device=device,
+            weight_dtype=weight_dtype,
             text_input_ids=token_ids,
             num_images_per_prompt=num_images_per_prompt,
         )
@@ -698,6 +702,7 @@ def encode_prompt(
         max_sequence_length=max_sequence_length,
         num_images_per_prompt=num_images_per_prompt,
         device=device,
+        weight_dtype=weight_dtype,
         text_input_ids=t5_token_ids,
     )
 
@@ -729,7 +734,14 @@ def main(args):
     accelerator_project_config = ProjectConfiguration(
         project_dir=args.output_dir, logging_dir=logging_dir
     )
-    ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
+    # for compatibility with gradient checkpointing
+    find_unused_params = args.train_text_encoder and args.gradient_checkpointing
+    ddp_kwargs = DistributedDataParallelKwargs(
+        find_unused_parameters=find_unused_params
+    )
+    # for compatibility with gradient checkpointing
+    ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=False)
+
     accelerator = Accelerator(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         mixed_precision=args.mixed_precision,
@@ -1417,6 +1429,7 @@ def main(args):
                         prompts,
                         args.max_sequence_length,
                         accelerator.device,
+                        weight_dtype=weight_dtype,
                     )
                 else:
                     # Tokenize prompts when training text encoders
@@ -1445,6 +1458,7 @@ def main(args):
                         prompts,
                         args.max_sequence_length,
                         accelerator.device,
+                        weight_dtype=weight_dtype,
                         text_input_ids_list=[tokens_one, tokens_two, tokens_three],
                     )
 
@@ -1634,6 +1648,21 @@ def main(args):
             _ = log_validation(pipeline, epoch, is_final=False)
             del pipeline
             free_memory()
+
+        # After validation, ensure all models are back on the correct device for training.
+        # The validation step with `enable_model_cpu_offload` might have moved them to CPU.
+        # This is necessary to prevent a "No backend type associated with device type cpu" error in DDP.
+        accelerator.wait_for_everyone()
+
+        transformer.to(accelerator.device)
+        text_encoder_one.to(accelerator.device)
+        text_encoder_two.to(accelerator.device)
+        text_encoder_three.to(accelerator.device)
+        vae.to(accelerator.device)
+
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     # ═══════════════════════════════════════════════════════════
     # Final Model Saving and Validation
