@@ -1280,7 +1280,24 @@ def main(args):
             initial_global_step = 0
         else:
             accelerator.print(f"Resuming training from checkpoint {path}")
-            accelerator.load_state(os.path.join(args.output_dir, path))
+            # Load state with a CPU map_location to avoid OOM on GPU during loading
+            accelerator.load_state(
+                os.path.join(args.output_dir, path), map_location="cpu"
+            )
+            # After loading to CPU, move all models back to the correct accelerator device
+            # This ensures they are on the GPU for training continuation.
+            models_to_move = [
+                transformer,
+                text_encoder_one,
+                text_encoder_two,
+                text_encoder_three,
+                vae,
+                optimizer,
+            ]
+            for model in models_to_move:
+                if hasattr(model, "to"):
+                    model.to(accelerator.device)
+            free_memory()
             global_step = int(path.split("-")[1])
             initial_global_step = global_step
             first_epoch = global_step // num_update_steps_per_epoch
@@ -1622,47 +1639,68 @@ def main(args):
                 break
 
         # Run validation at the end of each epoch
+        # Run validation at the end of each epoch
         if (
             accelerator.is_main_process
             and args.validation_prompt is not None
             and epoch % args.validation_epochs == 0
         ):
-            # Create pipeline for validation
-            unwrapped_text_encoder_one = accelerator.unwrap_model(text_encoder_one)
-            unwrapped_text_encoder_two = accelerator.unwrap_model(text_encoder_two)
-            unwrapped_text_encoder_three = accelerator.unwrap_model(text_encoder_three)
+            # ═════════ BEGIN VALIDATION (Final Correct Way) ═════════
+            logger.info("Running validation...")
+
+            # 1. Create a clean pipeline from pretrained.
+            # This pipeline has original models without any LoRA adapters.
             pipeline = StableDiffusion3Pipeline.from_pretrained(
                 args.pretrained_model_name_or_path,
-                vae=vae,
-                text_encoder=unwrapped_text_encoder_one,
-                text_encoder_2=unwrapped_text_encoder_two,
-                text_encoder_3=unwrapped_text_encoder_three,
-                transformer=accelerator.unwrap_model(transformer),
                 revision=args.revision,
                 variant=args.variant,
                 torch_dtype=weight_dtype,
+                # To save VRAM, load components onto CPU first.
+                low_cpu_mem_usage=True,
             )
             pipeline.scheduler = noise_scheduler
-            # Use current in-memory LoRA models instead of loading from file
 
+            # 2. Add LoRA adapters to the clean validation pipeline's models.
+            # This makes their structure match the training models.
+            pipeline.transformer.add_adapter(transformer_lora_config)
+            if args.train_text_encoder:
+                pipeline.text_encoder.add_adapter(text_lora_config)
+                pipeline.text_encoder_2.add_adapter(text_lora_config)
+
+            # 3. Extract *only* the LoRA weights from the trained models.
+            transformer_lora_state_dict = get_peft_model_state_dict(
+                accelerator.unwrap_model(transformer)
+            )
+
+            if args.train_text_encoder:
+                text_encoder_lora_state_dict = get_peft_model_state_dict(
+                    accelerator.unwrap_model(text_encoder_one)
+                )
+                text_encoder_2_lora_state_dict = get_peft_model_state_dict(
+                    accelerator.unwrap_model(text_encoder_two)
+                )
+
+            # 4. Inject the extracted LoRA weights into the validation pipeline's adapters.
+            set_peft_model_state_dict(pipeline.transformer, transformer_lora_state_dict)
+            if args.train_text_encoder:
+                set_peft_model_state_dict(
+                    pipeline.text_encoder, text_encoder_lora_state_dict
+                )
+                set_peft_model_state_dict(
+                    pipeline.text_encoder_2, text_encoder_2_lora_state_dict
+                )
+
+            # 5. Run validation logic with the correctly prepared pipeline.
+            # The original training models were never touched.
             _ = log_validation(pipeline, epoch, is_final=False)
-            del pipeline
+
+            # 6. Clean up the validation pipeline.
+            del pipeline, transformer_lora_state_dict
+            if args.train_text_encoder:
+                del text_encoder_lora_state_dict, text_encoder_2_lora_state_dict
             free_memory()
-
-        # After validation, ensure all models are back on the correct device for training.
-        # The validation step with `enable_model_cpu_offload` might have moved them to CPU.
-        # This is necessary to prevent a "No backend type associated with device type cpu" error in DDP.
-        accelerator.wait_for_everyone()
-
-        transformer.to(accelerator.device)
-        text_encoder_one.to(accelerator.device)
-        text_encoder_two.to(accelerator.device)
-        text_encoder_three.to(accelerator.device)
-        vae.to(accelerator.device)
-
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+            logger.info("Finished validation.")
+            # ═════════ END VALIDATION (Final Correct Way) ═════════
 
     # ═══════════════════════════════════════════════════════════
     # Final Model Saving and Validation
@@ -1670,16 +1708,22 @@ def main(args):
     accelerator.wait_for_everyone()
     if accelerator.is_main_process:
         # Extract and save LoRA weights
-        transformer_unwrapped = accelerator.unwrap_model(transformer).to(torch.float32)
+        # Move to CPU before converting to float32 to avoid OOM on GPU
+        logger.info("Moving models to CPU for saving...")
+
+        transformer_unwrapped = (
+            accelerator.unwrap_model(transformer).to("cpu").to(torch.float32)
+        )
         transformer_lora_layers = get_peft_model_state_dict(transformer_unwrapped)
 
         if args.train_text_encoder:
-            text_encoder_one_unwrapped = accelerator.unwrap_model(text_encoder_one).to(
-                torch.float32
+            text_encoder_one_unwrapped = (
+                accelerator.unwrap_model(text_encoder_one).to("cpu").to(torch.float32)
             )
-            text_encoder_two_unwrapped = accelerator.unwrap_model(text_encoder_two).to(
-                torch.float32
+            text_encoder_two_unwrapped = (
+                accelerator.unwrap_model(text_encoder_two).to("cpu").to(torch.float32)
             )
+
             text_encoder_lora_layers = get_peft_model_state_dict(
                 text_encoder_one_unwrapped
             )
