@@ -58,3 +58,22 @@ accelerate launch train_text_to_image_lora_sd35.py \
 echo ""
 echo "✅ Training completed! Check your results in: $OUTPUT_DIR"
 echo "📊 View training logs with: tensorboard --logdir $OUTPUT_DIR/logs" 
+
+#eample
+accelerate launch t2i-lora-sd35-3.py \
+  --pretrained_model_name_or_path="/scratch/chans/sd-models/stable-diffusion-3.5-medium" \
+  --train_data_dir="/home/chans/worldccub/lora_dataset" \
+  --output_dir="/scratch/chans/lora-output-t2i-sd35-3" \
+  --resolution 1024 \
+  --train_batch_size 1 \
+  --num_train_epochs 10 \
+  --rank 128 \
+  --learning_rate 4e-4 \
+  --text_encoder_lr 2e-5 \
+  --lr_scheduler "cosine" \
+  --lr_warmup_steps 250 \
+  --mixed_precision fp16 \
+  --gradient_checkpointing \
+  --train_text_encoder \
+  --report_to wandb \
+  --seed 42
