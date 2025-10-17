@@ -187,6 +187,15 @@ RESOLUTION=1024 \
 bash scripts/inference.sh
 ```
 
+## ☁️ Google Colab Fine-Tuning
+
+Want to fine-tune SD3.5 on free or paid Colab GPUs? Use the bundled notebook:
+
+- Notebook: [`SD35_LoRA_Colab.ipynb`](SD35_LoRA_Colab.ipynb)
+- Step-by-step guide: [`docs/COLAB_FINETUNING.md`](docs/COLAB_FINETUNING.md)
+
+The notebook performs environment setup, Hugging Face auth, dataset validation, LoRA training, and inference validation. Follow the guide to configure dataset paths, adjust hyperparameters for T4/A100 runtimes, and resume or export runs.
+
 ## ⚙️ Configuration Options
 
 ### Core Training Parameters
