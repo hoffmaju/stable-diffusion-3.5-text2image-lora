@@ -1639,17 +1639,14 @@ def main(args):
                 break
 
         # Run validation at the end of each epoch
-        # Run validation at the end of each epoch
         if (
             accelerator.is_main_process
             and args.validation_prompt is not None
             and epoch % args.validation_epochs == 0
         ):
-            # ═════════ BEGIN VALIDATION (Final Correct Way) ═════════
+            # ═════════ BEGIN VALIDATION ═════════
             logger.info("Running validation...")
 
-            # 1. Create a clean pipeline from pretrained.
-            # This pipeline has original models without any LoRA adapters.
             pipeline = StableDiffusion3Pipeline.from_pretrained(
                 args.pretrained_model_name_or_path,
                 revision=args.revision,
@@ -1660,14 +1657,11 @@ def main(args):
             )
             pipeline.scheduler = noise_scheduler
 
-            # 2. Add LoRA adapters to the clean validation pipeline's models.
-            # This makes their structure match the training models.
             pipeline.transformer.add_adapter(transformer_lora_config)
             if args.train_text_encoder:
                 pipeline.text_encoder.add_adapter(text_lora_config)
                 pipeline.text_encoder_2.add_adapter(text_lora_config)
 
-            # 3. Extract *only* the LoRA weights from the trained models.
             transformer_lora_state_dict = get_peft_model_state_dict(
                 accelerator.unwrap_model(transformer)
             )
@@ -1680,7 +1674,6 @@ def main(args):
                     accelerator.unwrap_model(text_encoder_two)
                 )
 
-            # 4. Inject the extracted LoRA weights into the validation pipeline's adapters.
             set_peft_model_state_dict(pipeline.transformer, transformer_lora_state_dict)
             if args.train_text_encoder:
                 set_peft_model_state_dict(
@@ -1690,25 +1683,20 @@ def main(args):
                     pipeline.text_encoder_2, text_encoder_2_lora_state_dict
                 )
 
-            # 5. Run validation logic with the correctly prepared pipeline.
-            # The original training models were never touched.
             _ = log_validation(pipeline, epoch, is_final=False)
 
-            # 6. Clean up the validation pipeline.
             del pipeline, transformer_lora_state_dict
             if args.train_text_encoder:
                 del text_encoder_lora_state_dict, text_encoder_2_lora_state_dict
             free_memory()
             logger.info("Finished validation.")
-            # ═════════ END VALIDATION (Final Correct Way) ═════════
+            # ═════════ END VALIDATION ═════════
 
     # ═══════════════════════════════════════════════════════════
-    # Final Model Saving and Validation
+    # Final model saving and validation
     # ═══════════════════════════════════════════════════════════
     accelerator.wait_for_everyone()
     if accelerator.is_main_process:
-        # Extract and save LoRA weights
-        # Move to CPU before converting to float32 to avoid OOM on GPU
         logger.info("Moving models to CPU for saving...")
 
         transformer_unwrapped = (
